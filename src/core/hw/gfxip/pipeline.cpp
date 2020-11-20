@@ -1169,7 +1169,6 @@ Result PipelineUploader::End(
         else
         {
             PAL_ASSERT(m_pMappedPtr != nullptr);
-            result = m_pGpuMemory->Unmap();
         }
 
         m_pMappedPtr = nullptr;

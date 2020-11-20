@@ -56,6 +56,8 @@ struct GpuMemoryPool
     uint64                          pagingFenceVal;         // Paging fence value
 
     Util::BuddyAllocator<Platform>* pBuddyAllocator;        // Buddy allocator used for the suballocation
+    bool                            mapped;
+    void*                           pData;
 };
 
 // =====================================================================================================================
@@ -115,6 +117,13 @@ public:
 
     // Number of all allocations in the reference list. Note that this function takes the reference list lock.
     uint32 GetReferencesCount();
+
+    Result Map(
+        BoundGpuMemory*  pBoundGpuMemory,
+        void** ppData);
+
+    Result Unmap(
+        BoundGpuMemory*  pBoundGpuMemory);
 
 private:
     Result AllocateBaseGpuMem(

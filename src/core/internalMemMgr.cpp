@@ -153,6 +153,18 @@ Result InternalMemMgr::Init()
 // Explicitly frees all GPU memory allocations.
 void InternalMemMgr::FreeAllocations()
 {
+    // Release pool mappings.
+    for (auto it = m_poolList.Begin(); it.Get() != nullptr; it.Next())
+    {
+        PAL_ASSERT((it.Get() != nullptr) && (it.Get()->pBuddyAllocator != nullptr));
+
+        if (it.Get()->mapped && it.Get()->pGpuMemory != nullptr)
+        {
+            it.Get()->pGpuMemory->Unmap();
+            it.Get()->mapped = false;
+        }
+    }
+
     // Delete the GPU memory objects using the references list
     while (m_references.NumElements() != 0)
     {
@@ -576,6 +588,59 @@ uint32 InternalMemMgr::GetReferencesCount()
 {
     RWLockAuto<RWLock::ReadOnly> referenceLock(&m_referenceLock);
     return static_cast<uint32>(m_references.NumElements());
+}
+
+Result InternalMemMgr::Map(
+        BoundGpuMemory*  pBoundGpuMemory,
+        void** ppData)
+{
+    Util::MutexAuto allocatorLock(&m_allocatorLock); // Ensure thread-safety using the lock
+
+    GpuMemory* pGpuMemory = pBoundGpuMemory->Memory();
+    PAL_ASSERT(pGpuMemory != nullptr);
+
+    Result result = Result::ErrorInvalidValue;
+
+    if (pGpuMemory->WasBuddyAllocated())
+    {
+        // Try to find the allocation in the pool list
+        for (auto it = m_poolList.Begin(); it.Get() != nullptr; it.Next())
+        {
+            GpuMemoryPool* pPool = it.Get();
+
+            PAL_ASSERT((pPool->pGpuMemory != nullptr) && (pPool->pBuddyAllocator != nullptr));
+
+            if (pPool->pGpuMemory == pGpuMemory)
+            {
+                if (!pPool->mapped)
+                {
+                    result = pPool->pGpuMemory->Map(&pPool->pData);
+                    if (result != Result::Success) {
+                        break;
+                    }
+                    pPool->mapped = true;
+                }
+                *ppData = static_cast<uint8*>(pPool->pData) + pBoundGpuMemory->Offset();
+                result = Result::Success;
+                break;
+            }
+        }
+
+        // If we didn't find the allocation in the pool list then something went wrong with the allocation scheme
+        PAL_ASSERT(result == Result::Success);
+    }
+    else
+    {
+        result = pGpuMemory->Map(ppData);
+    }
+
+    return result;
+}
+
+Result InternalMemMgr::Unmap(
+        BoundGpuMemory*  pGpuMemory)
+{
+    return Result::Success;
 }
 
 } // Pal
